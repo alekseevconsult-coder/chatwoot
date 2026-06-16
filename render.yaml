@@ -65,8 +65,7 @@ services:
         fromDatabase:
           name: omni-postgres
           property: connectionString
-      - key: LITELLM_MASTER_KEY
-        fromGroup: omni-shared
+      - fromGroup: omni-shared      # imports LITELLM_MASTER_KEY (+ APP_SECRET_KEY)
       - key: LITELLM_SALT_KEY
         generateValue: true
 
@@ -80,6 +79,8 @@ services:
     dockerCommand: sh -c "bundle exec rails db:chatwoot_prepare; bundle exec rails s -p $PORT -b 0.0.0.0"
     healthCheckPath: /
     envVars:
+      - key: PORT            # pin so internal callers can use http://chatwoot:3000
+        value: "3000"
       - key: RAILS_ENV
         value: production
       - key: NODE_ENV
@@ -134,10 +135,9 @@ services:
     dockerCommand: sh -c "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
     healthCheckPath: /health
     envVars:
-      - key: APP_SECRET_KEY
-        fromGroup: omni-shared
-      - key: LITELLM_MASTER_KEY
-        fromGroup: omni-shared
+      - key: PORT            # pin so Chatwoot can reach the webhook at http://ai-service:8080
+        value: "8080"
+      - fromGroup: omni-shared      # imports APP_SECRET_KEY + LITELLM_MASTER_KEY
       # AI service builds its async DB URL from this managed connection string (scheme is
       # normalised to +asyncpg automatically), creating its tables in the shared DB.
       - key: OMNI_DATABASE_URL
