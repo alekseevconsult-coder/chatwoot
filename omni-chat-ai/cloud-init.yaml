@@ -1,31 +1,37 @@
 #cloud-config
 # One-click deploy: paste this into your cloud provider's "User data" / "Cloud-init" box when
-# creating a server (DigitalOcean, Hetzner, AWS EC2, Vultr, Linode, …), then click Create.
-# The server boots and installs the entire Omni-Chat-AI stack automatically.
+# creating a server (Hetzner, DigitalOcean, Vultr, …), then click Create. The server boots and
+# installs the entire Omni-Chat-AI stack automatically.
 #
-# 1) Edit the two exports below (DOMAIN + ACME_EMAIL) for a public HTTPS deploy, OR leave DOMAIN
-#    empty to run on the server's IP/ports.
-# 2) For a domain: point  example.com  AND  panel.example.com  at the server's IP first.
-# 3) Recommended size: 4 GB RAM or more.
+# Recommended server: Hetzner CPX31 (4 vCPU / 8 GB RAM, ~$8.50/mo), Ubuntu 24.04.
 #
-# After ~5–10 minutes, open  https://panel.<your-domain>/admin  (or  http://<server-ip>:8080/admin )
-# to create your admin account and enter your API keys.
-
-package_update: true
-packages:
-  - git
-  - curl
-  - openssl
+# Fill in the three values below:
+#   GITHUB_TOKEN — a GitHub PAT with READ access to the repo (the repo is private). Use a
+#                  fine-grained token scoped to just this repo, and revoke it after deploy.
+#   DOMAIN       — optional; set for automatic HTTPS (point example.com AND panel.example.com
+#                  at the server's IP first). Leave empty to run on the server IP/ports.
+#   ACME_EMAIL   — optional; for Let's Encrypt notices when DOMAIN is set.
+#
+# After ~5–10 min, open  https://panel.<domain>/admin  (or  http://<server-ip>:8080/admin ).
 
 write_files:
   - path: /root/omni-deploy.sh
-    permissions: "0755"
+    permissions: "0700"
     content: |
       #!/usr/bin/env bash
       set -euo pipefail
-      export DOMAIN=""            # e.g. example.com  (leave empty for IP-only)
-      export ACME_EMAIL=""        # e.g. you@example.com (for Let's Encrypt)
-      curl -fsSL https://raw.githubusercontent.com/alekseevconsult-coder/chatwoot/claude/omni-chat-ai-stack-7ydEC/omni-chat-ai/install.sh | bash
+      export GITHUB_TOKEN="REPLACE_WITH_GITHUB_TOKEN"
+      export DOMAIN=""
+      export ACME_EMAIL=""
+      REPO="alekseevconsult-coder/chatwoot-artem"
+      BRANCH="claude/omni-chat-ai-stack-7ydEC"
+      command -v git >/dev/null || (apt-get update -y && apt-get install -y git curl openssl)
+      command -v docker >/dev/null || curl -fsSL https://get.docker.com | sh
+      rm -rf /opt/omni-chat-ai
+      git clone --branch "$BRANCH" --depth 1 \
+        "https://${GITHUB_TOKEN}@github.com/${REPO}.git" /opt/omni-chat-ai
+      cd /opt/omni-chat-ai/omni-chat-ai
+      DOMAIN="$DOMAIN" ACME_EMAIL="$ACME_EMAIL" bash ./deploy.sh
 
 runcmd:
   - [ bash, /root/omni-deploy.sh ]

@@ -20,16 +20,21 @@ E-Chat.tech / Evolution API (personal-account connectors).
 
 ## One-click deploy (any cloud)
 
-**Option A — paste at server creation (truly one click).** When creating a server on
-DigitalOcean / Hetzner / AWS / Vultr / Linode, paste [`cloud-init.yaml`](cloud-init.yaml) into the
-**User data / Cloud-init** box (edit `DOMAIN` + `ACME_EMAIL` first), then click *Create*. The
-server installs Docker and the whole stack automatically and gets HTTPS. ~4 GB RAM recommended.
+Recommended host: **Hetzner CPX31** (4 vCPU / 8 GB RAM, ~$8.50/mo), Ubuntu 24.04 — runs the whole
+stack for a fraction of a per-service PaaS. The repo is **private**, so the server needs a GitHub
+token (a fine-grained PAT with read access; revoke it after).
 
-**Option B — one line on any fresh Ubuntu/Debian server:**
+**Option A — paste at server creation (truly one click).** Paste [`cloud-init.yaml`](cloud-init.yaml)
+into the provider's **User data / Cloud-init** box (fill `GITHUB_TOKEN`, and `DOMAIN`/`ACME_EMAIL`
+for HTTPS), then click *Create*. The server installs Docker and the whole stack automatically.
+
+**Option B — a few commands over SSH (no token in metadata):**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/alekseevconsult-coder/chatwoot/claude/omni-chat-ai-stack-7ydEC/omni-chat-ai/install.sh | bash
-# public HTTPS deploy (point example.com AND panel.example.com at the server first):
-curl -fsSL .../install.sh | DOMAIN=example.com ACME_EMAIL=you@example.com bash
+curl -fsSL https://get.docker.com | sh
+git clone --branch claude/omni-chat-ai-stack-7ydEC \
+  https://github.com/alekseevconsult-coder/chatwoot-artem.git   # prompts for username + PAT
+cd chatwoot-artem/omni-chat-ai
+./deploy.sh                                  # or: DOMAIN=example.com ACME_EMAIL=you@example.com ./deploy.sh
 ```
 
 **Option C — Coolify:** install Coolify on a VPS and import this `docker-compose.yml` (dashboard UX).

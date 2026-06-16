@@ -8,7 +8,14 @@
 # Re-running updates to the latest code and redeploys. Override REPO_URL / BRANCH / TARGET as env.
 set -euo pipefail
 
-REPO_URL="${REPO_URL:-https://github.com/alekseevconsult-coder/chatwoot.git}"
+REPO_SLUG="${REPO_SLUG:-alekseevconsult-coder/chatwoot-artem}"
+# Private repos need a GitHub token (a fine-grained or classic PAT with read access). Public
+# repos work with no token. Pass it as GITHUB_TOKEN.
+if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+  REPO_URL="${REPO_URL:-https://${GITHUB_TOKEN}@github.com/${REPO_SLUG}.git}"
+else
+  REPO_URL="${REPO_URL:-https://github.com/${REPO_SLUG}.git}"
+fi
 BRANCH="${BRANCH:-claude/omni-chat-ai-stack-7ydEC}"
 TARGET="${TARGET:-/opt/omni-chat-ai}"
 SUDO=""; [[ "$(id -u)" -ne 0 ]] && SUDO="sudo"
