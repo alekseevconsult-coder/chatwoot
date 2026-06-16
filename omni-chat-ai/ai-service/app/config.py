@@ -46,15 +46,29 @@ class Settings(BaseSettings):
                     url = "postgresql+asyncpg://" + url[len(prefix):]
                     break
         self.omni_database_url = url
+        # Platforms (Render) expose service addresses as bare `host:port`; our HTTP clients need
+        # a scheme. Prepend http:// to internal base URLs that lack one.
+        # Resolve the service's own public/internal URLs: explicit value → Render's auto-injected
+        # external URL → sensible local default.
+        self.public_base_url = self.public_base_url or self.render_external_url or "http://localhost:8080"
+        self.internal_base_url = self.internal_base_url or self.render_external_url or "http://ai-service:8080"
+        for attr in ("litellm_base_url", "qdrant_url", "internal_base_url", "chatwoot_base_url"):
+            value = getattr(self, attr)
+            if value and "://" not in value:
+                setattr(self, attr, f"http://{value}")
         return self
 
 
-    # Public URL of this service (used to render webhook/embed snippets in the panel).
-    public_base_url: str = "http://localhost:8080"
+    # Public URL of this service (used to render webhook/embed snippets in the panel). Empty →
+    # falls back to RENDER_EXTERNAL_URL (auto-injected on Render) then localhost.
+    public_base_url: str = ""
 
-    # Internal URL Chatwoot uses to reach this service for agent-bot/API-channel webhooks
-    # (server-to-server inside the compose network — independent of the public proxy/TLS).
-    internal_base_url: str = "http://ai-service:8080"
+    # Internal URL Chatwoot uses to reach this service for agent-bot/API-channel webhooks. Empty
+    # → the compose-network address; on Render the service's external URL works (ingress).
+    internal_base_url: str = ""
+
+    # Auto-injected by Render (the service's public https URL); used as a fallback above.
+    render_external_url: str = ""
 
     # Chatwoot (Unified Chat Panel)
     chatwoot_base_url: str = "http://chatwoot:3000"

@@ -53,6 +53,7 @@ services:
   - type: pserv
     name: litellm
     runtime: image
+    plan: standard            # LiteLLM OOMs on 512 MB; needs ~2 GB
     image:
       url: ghcr.io/berriai/litellm:main-stable
     dockerCommand: litellm --port 4000
@@ -73,6 +74,7 @@ services:
   - type: web
     name: chatwoot
     runtime: image
+    plan: standard            # Rails app needs ~2 GB
     image:
       url: docker.io/chatwoot/chatwoot:v4.14.2
     # Prepare the DB on boot, then serve on Render's assigned $PORT.
@@ -107,6 +109,7 @@ services:
   - type: worker
     name: chatwoot-worker
     runtime: image
+    plan: standard            # Sidekiq + Rails needs ~2 GB
     image:
       url: docker.io/chatwoot/chatwoot:v4.14.2
     dockerCommand: bundle exec sidekiq -C config/sidekiq.yml
@@ -130,26 +133,25 @@ services:
   - type: web
     name: ai-service
     runtime: docker
+    plan: standard            # headroom for the local RAG embedding model
     dockerfilePath: ./omni-chat-ai/ai-service/Dockerfile
     dockerContext: ./omni-chat-ai/ai-service
     dockerCommand: sh -c "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
     healthCheckPath: /health
     envVars:
-      - key: PORT            # pin so Chatwoot can reach the webhook at http://ai-service:8080
+      - key: PORT
         value: "8080"
       - fromGroup: omni-shared      # imports APP_SECRET_KEY + LITELLM_MASTER_KEY
       # AI service builds its async DB URL from this managed connection string (scheme is
       # normalised to +asyncpg automatically), creating its tables in the shared DB.
       - key: OMNI_DATABASE_URL
         fromDatabase: { name: omni-postgres, property: connectionString }
+      # Render gives private services suffixed hostnames; resolve them with fromService so the
+      # AI service reaches the right address (the app adds the http:// scheme automatically).
       - key: LITELLM_BASE_URL
-        value: http://litellm:4000
+        fromService: { name: litellm, type: pserv, property: hostport }
       - key: QDRANT_URL
-        value: http://qdrant:6333
+        fromService: { name: qdrant, type: pserv, property: hostport }
       - key: CHATWOOT_BASE_URL
-        value: http://chatwoot:3000
-      - key: INTERNAL_BASE_URL
-        value: http://ai-service:8080
-      # ⚠ After first deploy, set PUBLIC_BASE_URL to this service's URL (https://ai-service-xxxx.onrender.com).
-      - key: PUBLIC_BASE_URL
-        sync: false
+        fromService: { name: chatwoot, type: web, property: hostport }
+      # PUBLIC_BASE_URL / INTERNAL_BASE_URL fall back to Render's auto-injected RENDER_EXTERNAL_URL.
