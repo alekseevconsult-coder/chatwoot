@@ -1,0 +1,155 @@
+# Omni-Chat-AI — Render Blueprint (core stack).
+#
+# Deploy: Render Dashboard → New → Blueprint → pick this repo. Render reads this file, creates
+# the services, and auto-generates secrets. After the first deploy, open the AI service URL +
+# /admin to create your admin account and enter API keys (Anthropic, KeyCRM, …) in the panel.
+#
+# Scope: the core product (Postgres, Redis, Qdrant, LiteLLM, Chatwoot web+worker, AI panel).
+# Langfuse/ClickHouse (observability) and Evolution (extra channels) are omitted to keep the
+# footprint small; add them later. This is a starter Blueprint — verify plans/regions and the
+# two ⚠ items below on first deploy. For the most reliable deploy, the VPS one-liner / cloud-init
+# in omni-chat-ai/ remains the simplest path.
+
+databases:
+  - name: omni-postgres
+    databaseName: omni
+    user: omni
+    plan: basic-1gb            # Chatwoot needs headroom; downsize later if you like
+    postgresMajorVersion: "16"
+
+envVarGroups:
+  - name: omni-shared
+    envVars:
+      - key: LITELLM_MASTER_KEY   # shared by litellm + ai-service
+        generateValue: true
+      - key: APP_SECRET_KEY       # encrypts panel secrets + signs sessions
+        generateValue: true
+
+services:
+  # ---- Redis (managed Key Value) -------------------------------------------------
+  - type: redis
+    name: omni-redis
+    plan: starter
+    maxmemoryPolicy: noeviction
+    ipAllowList: []
+
+  # ---- Qdrant (vector store) -----------------------------------------------------
+  - type: pserv
+    name: qdrant
+    runtime: image
+    image:
+      url: docker.io/qdrant/qdrant:v1.18.2
+    envVars:
+      - key: PORT
+        value: "6333"
+      - key: QDRANT__SERVICE__HTTP_PORT
+        value: "6333"
+    disk:
+      name: qdrant-data
+      mountPath: /qdrant/storage
+      sizeGB: 5
+
+  # ---- LiteLLM model gateway (DB mode, no config file needed) ---------------------
+  - type: pserv
+    name: litellm
+    runtime: image
+    image:
+      url: ghcr.io/berriai/litellm:main-stable
+    dockerCommand: litellm --port 4000
+    envVars:
+      - key: PORT
+        value: "4000"
+      - key: STORE_MODEL_IN_DB
+        value: "True"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: omni-postgres
+          property: connectionString
+      - key: LITELLM_MASTER_KEY
+        fromGroup: omni-shared
+      - key: LITELLM_SALT_KEY
+        generateValue: true
+
+  # ---- Chatwoot (Unified Chat Panel) — web ---------------------------------------
+  - type: web
+    name: chatwoot
+    runtime: image
+    image:
+      url: docker.io/chatwoot/chatwoot:v4.14.2
+    # Prepare the DB on boot, then serve on Render's assigned $PORT.
+    dockerCommand: sh -c "bundle exec rails db:chatwoot_prepare; bundle exec rails s -p $PORT -b 0.0.0.0"
+    healthCheckPath: /
+    envVars:
+      - key: RAILS_ENV
+        value: production
+      - key: NODE_ENV
+        value: production
+      - key: INSTALLATION_ENV
+        value: docker
+      - key: POSTGRES_HOST
+        fromDatabase: { name: omni-postgres, property: host }
+      - key: POSTGRES_USERNAME
+        fromDatabase: { name: omni-postgres, property: user }
+      - key: POSTGRES_PASSWORD
+        fromDatabase: { name: omni-postgres, property: password }
+      - key: POSTGRES_DATABASE
+        fromDatabase: { name: omni-postgres, property: database }
+      - key: REDIS_URL
+        fromService: { name: omni-redis, type: redis, property: connectionString }
+      - key: SECRET_KEY_BASE
+        generateValue: true
+      # ⚠ After first deploy, set FRONTEND_URL to this service's URL (https://chatwoot-xxxx.onrender.com).
+      - key: FRONTEND_URL
+        sync: false
+
+  # ---- Chatwoot Sidekiq worker ---------------------------------------------------
+  - type: worker
+    name: chatwoot-worker
+    runtime: image
+    image:
+      url: docker.io/chatwoot/chatwoot:v4.14.2
+    dockerCommand: bundle exec sidekiq -C config/sidekiq.yml
+    envVars:
+      - key: RAILS_ENV
+        value: production
+      - key: POSTGRES_HOST
+        fromDatabase: { name: omni-postgres, property: host }
+      - key: POSTGRES_USERNAME
+        fromDatabase: { name: omni-postgres, property: user }
+      - key: POSTGRES_PASSWORD
+        fromDatabase: { name: omni-postgres, property: password }
+      - key: POSTGRES_DATABASE
+        fromDatabase: { name: omni-postgres, property: database }
+      - key: REDIS_URL
+        fromService: { name: omni-redis, type: redis, property: connectionString }
+      - key: SECRET_KEY_BASE
+        fromService: { name: chatwoot, type: web, envVarKey: SECRET_KEY_BASE }
+
+  # ---- AI agent service + admin panel --------------------------------------------
+  - type: web
+    name: ai-service
+    runtime: docker
+    dockerfilePath: ./omni-chat-ai/ai-service/Dockerfile
+    dockerContext: ./omni-chat-ai/ai-service
+    dockerCommand: sh -c "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    healthCheckPath: /health
+    envVars:
+      - key: APP_SECRET_KEY
+        fromGroup: omni-shared
+      - key: LITELLM_MASTER_KEY
+        fromGroup: omni-shared
+      # AI service builds its async DB URL from this managed connection string (scheme is
+      # normalised to +asyncpg automatically), creating its tables in the shared DB.
+      - key: OMNI_DATABASE_URL
+        fromDatabase: { name: omni-postgres, property: connectionString }
+      - key: LITELLM_BASE_URL
+        value: http://litellm:4000
+      - key: QDRANT_URL
+        value: http://qdrant:6333
+      - key: CHATWOOT_BASE_URL
+        value: http://chatwoot:3000
+      - key: INTERNAL_BASE_URL
+        value: http://ai-service:8080
+      # ⚠ After first deploy, set PUBLIC_BASE_URL to this service's URL (https://ai-service-xxxx.onrender.com).
+      - key: PUBLIC_BASE_URL
+        sync: false

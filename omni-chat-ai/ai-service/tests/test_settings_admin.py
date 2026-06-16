@@ -26,6 +26,23 @@ async def sqlite_db(tmp_path, monkeypatch):
     settings_service._cache.clear()
 
 
+def test_omni_database_url_built_from_components(monkeypatch):
+    from app.config import Settings
+
+    monkeypatch.delenv("OMNI_DATABASE_URL", raising=False)
+    monkeypatch.setenv("POSTGRES_PASSWORD", "p@ss")
+    monkeypatch.setenv("POSTGRES_HOST", "db.internal")
+    url = Settings().omni_database_url
+    assert url == "postgresql+asyncpg://chatwoot:p@ss@db.internal:5432/omni_ai"
+
+
+def test_omni_database_url_scheme_normalised(monkeypatch):
+    from app.config import Settings
+
+    monkeypatch.setenv("OMNI_DATABASE_URL", "postgres://u:p@h:5432/db")
+    assert Settings().omni_database_url == "postgresql+asyncpg://u:p@h:5432/db"
+
+
 def test_crypto_round_trip():
     token = crypto.seal("super-secret-key")
     assert crypto.open_secret(token) == "super-secret-key"

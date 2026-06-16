@@ -1,6 +1,7 @@
 """Centralised configuration, loaded from environment (12-factor)."""
 from __future__ import annotations
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -19,9 +20,34 @@ class Settings(BaseSettings):
     # This is the ONLY secret the operator never types into the UI.
     app_secret_key: str = "dev-insecure-change-me"
 
-    # Settings store / admin DB. Own `omni_ai` database on the shared Postgres. Named with an
-    # `omni_` prefix so it can't collide with Chatwoot's own DATABASE_URL in the shared .env.
-    omni_database_url: str = "postgresql+asyncpg://chatwoot:chatwoot@postgres:5432/omni_ai"
+    # Settings store / admin DB. Own `omni_ai` database on the shared Postgres. If
+    # OMNI_DATABASE_URL isn't set explicitly, it's built from the standard POSTGRES_* vars below
+    # (so platforms like Render/Railway that expose components — not a DSN — just work).
+    omni_database_url: str = ""
+    postgres_host: str = "postgres"
+    postgres_port: int = 5432
+    postgres_user: str = "chatwoot"
+    postgres_password: str = "chatwoot"
+    omni_database_name: str = "omni_ai"
+
+    @model_validator(mode="after")
+    def _build_omni_database_url(self) -> "Settings":
+        url = self.omni_database_url
+        if not url:
+            url = (
+                f"postgresql+asyncpg://{self.postgres_user}:{self.postgres_password}"
+                f"@{self.postgres_host}:{self.postgres_port}/{self.omni_database_name}"
+            )
+        else:
+            # Managed Postgres (Render/Railway/Heroku) hands out a sync `postgres(ql)://` DSN;
+            # the async engine needs the asyncpg driver. Normalise the scheme transparently.
+            for prefix in ("postgresql://", "postgres://"):
+                if url.startswith(prefix):
+                    url = "postgresql+asyncpg://" + url[len(prefix):]
+                    break
+        self.omni_database_url = url
+        return self
+
 
     # Public URL of this service (used to render webhook/embed snippets in the panel).
     public_base_url: str = "http://localhost:8080"

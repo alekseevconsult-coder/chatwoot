@@ -34,6 +34,10 @@ curl -fsSL .../install.sh | DOMAIN=example.com ACME_EMAIL=you@example.com bash
 
 **Option C — Coolify:** install Coolify on a VPS and import this `docker-compose.yml` (dashboard UX).
 
+**Option D — Render (managed PaaS):** a [`render.yaml`](../render.yaml) Blueprint deploys the core
+stack — see [`docs/deploy-render.md`](docs/deploy-render.md). (Netlify can't host this stack;
+Railway works too.)
+
 When it finishes, open **`https://panel.<your-domain>/admin`** (or `http://<server-ip>:8080/admin`),
 create your admin account, and paste your API keys under Settings. That's it.
 
